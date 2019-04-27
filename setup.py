@@ -33,7 +33,9 @@ def find_dependencies():
     status, output = getstatusoutput(["pkg-config", "--libs", "--cflags", "atlas"])
 
     if status != 0:
+        status, output = getstatusoutput(["pkg-config", "--libs", "--cflags", "blas-atlas"])
 
+    if status != 0:
         print ("looking for atlas library, trying hard-coded paths...")
 
         found = False
