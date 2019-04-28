@@ -5,11 +5,6 @@ import subprocess
 import sys
 import os
 
-try:
-    from Cython.Distutils import build_ext
-except ImportError:
-	raise Exception ("*** cython is needed to build this extension.")
-
 cmdclass = { }
 ext_modules = [ ]
 
@@ -105,7 +100,11 @@ ext_modules += [
 			  extra_compile_args = [ '-Wall', '-pthread', '-std=c++11', '-DKALDI_DOUBLEPRECISION=0', '-Wno-sign-compare', '-Wno-unused-local-typedefs', '-Winit-self', '-DHAVE_EXECINFO_H=1', '-DHAVE_CXXABI_H', '-DHAVE_ATLAS', '-g'  ],
 			  **find_dependencies()),
 ]
-cmdclass.update({ 'build_ext': build_ext })
+try:
+    from Cython.Distutils import build_ext
+    cmdclass.update({ 'build_ext': build_ext })
+except ImportError:
+	pass # *** cython is needed to build this extension.
 
 setup(
     name                 = 'py-kaldi-asr',
