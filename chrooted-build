@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Script run with qemu
+
+set -uo pipefail
+trap 's=$?; echo "$0: Error on line "$LINENO": $BASH_COMMAND"; exit $s' ERR
+IFS=$'\n\t'
+
+echo "Installing required packages"
+sudo apt update -y
+sudo apt-get install --no-install-recommends -y libatlas-base-dev libgfortran3 libopenblas-dev liblapack-dev gfortran git python3 python3-venv python3-dev
+
+# Install pre-compiled kaldi
+wget -q -O - "https://github.com/pguyot/kaldi/releases/download/v5.4.1/kaldi-c3260f2-linux_armv6l-vfp.tar.xz" | sudo tar xJ -C /
+sudo ldconfig
+
+cd /home/pi
+sudo -u pi git clone -b armv6l-release https://github.com/pguyot/py-kaldi-asr.git
+cd py-kaldi-asr
+python3 -m venv venv
+venv/bin/pip install wheel
+venv/bin/pip install https://github.com/pguyot/py-kaldi-asr/releases/download/v0.5.2/Cython-0.29.10-cp37-cp37m-linux_armv6l.whl
+venv/bin/pip install https://github.com/pguyot/py-kaldi-asr/releases/download/v0.5.2/numpy-1.17.4-cp37-cp37m-linux_armv6l.whl
+venv/bin/python setup.py bdist_egg
+venv/bin/python setup.py bdist_wheel

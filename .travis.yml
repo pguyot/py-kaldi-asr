@@ -1,0 +1,31 @@
+branches:
+  except:
+  - /^untagged.*$/
+language: python
+python:
+  - 3.7
+os: linux
+dist: xenial
+addons:
+  apt:
+    packages:
+    - qemu
+    - qemu-user-static
+    - binfmt-support
+    - parted
+    - wget
+    - dosfstools
+    - zip
+script:
+- sudo bash ./qemu-launcher
+deploy:
+  provider: releases
+  token:
+    secure: RLi8PMUgKWt5OtwL6tLiO3tTe1kSZ0fGbyAZ5Y44deE8V/xkH/xy/7Oynb+pVONodOwOg5qgeE8qhmuw2fVecZzYI/Jn7AEY09O08IYhSRLW4QgeQZkB9ASnPRAldwjRLjKBC5HSV/hsYrh+t4NlV2X1cVO/8IjncXsWKMrKm4x+qL/j20575UckuJf2bZs29W+Lzg5x0Yo4o5CFwTsz4I4UQhlSDK0RtJ+TlurK4EgXMPeJrYKWj8x6K+N5ZpdR+XoLvYT8YMCad7D/omALG9Y50PR2IjbCTLlRRLvGTwJKWiJAbD/AnslUl8h2DOJWkfmOAGBSXyHaZ5e0GGtUCiSRyQk/R+Ld0R6Z7dfVzTlx4DVChZ1sPezdZ0aQqKQYYASMZow3YaXNOyYXXBSAJXx0G3JKHeiuVbI51lOoqLj7t+cgHZ+Gia6/hFIc8OaauKVDcKNjk3/3TYNNbZReUduU7MG4DGRGWp5cwaZyIGMyJPwtxEXx33wKjiZoV8b76magY1W8P2UZn7hzmbmRHd/PD4IJaDqAtJZCnoJyMubBljv0LLXjYGEPZpt9qQMBH0jCPh7ZtHbuXPk9zucSX71VjB1CH356V8hPLPaNkEjj4x6Vw74NHh9EWAKvoCxV+gA9lki4DhWVtXAg5DVgoSyfC2m88erpan+SQSyRdUE=
+  file_glob: true
+  file: py_kaldi_asr-*armv6l.*
+  skip_cleanup: true
+  draft: true
+  on:
+    repo: pguyot/py-kaldi-asr
+    branch: armv6l-release
