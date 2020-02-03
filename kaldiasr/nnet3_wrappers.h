@@ -43,6 +43,7 @@ namespace kaldi {
                                 BaseFloat    lattice_beam,
                                 BaseFloat    acoustic_scale, 
                                 int32        frame_subsampling_factor, 
+                                int32        max_mem,
                                 std::string &word_syms_filename, 
                                 std::string &model_in_filename,
                                 std::string &fst_in_str,

@@ -52,7 +52,7 @@ cdef extern from "nnet3_wrappers.h" namespace "kaldi":
 
     cdef cppclass NNet3OnlineModelWrapper:
         NNet3OnlineModelWrapper() except +
-        NNet3OnlineModelWrapper(float, int, int, float, float, int, string, string, string, string, string, string) except +
+        NNet3OnlineModelWrapper(float, int, int, float, float, int, int, string, string, string, string, string, string) except +
 
     cdef cppclass NNet3OnlineDecoderWrapper:
         NNet3OnlineDecoderWrapper() except +
@@ -77,6 +77,7 @@ cdef class KaldiNNet3OnlineModel:
                         float  lattice_beam             = 8.0, 
                         float  acoustic_scale           = 1.0, # nnet3: 0.1
                         int    frame_subsampling_factor = 3,   # neet3: 1
+                        int    max_mem                  = 50000000,
 
                         int    num_gselect              = 5,
                         float  min_post                 = 0.025,
@@ -137,6 +138,7 @@ cdef class KaldiNNet3OnlineModel:
                                                          lattice_beam, 
                                                          acoustic_scale, 
                                                          frame_subsampling_factor, 
+                                                         max_mem,
                                                          word_symbol_table.encode('utf8'), 
                                                          model_in_filename.encode('utf8'), 
                                                          fst_in_str.encode('utf8'), 
