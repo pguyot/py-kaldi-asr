@@ -108,7 +108,7 @@ except ImportError:
 
 setup(
     name                 = 'py-kaldi-asr',
-    version              = '0.5.2',
+    version              = '0.5.3',
     description          = 'Simple Python/Cython interface to kaldi-asr nnet3/chain and gmm decoders',
     long_description     = open('README.md').read(),
     author               = 'Guenter Bartsch',

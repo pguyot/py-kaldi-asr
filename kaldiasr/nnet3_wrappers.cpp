@@ -292,6 +292,7 @@ namespace kaldi {
                                                      BaseFloat    lattice_beam,
                                                      BaseFloat    acoustic_scale, 
                                                      int32        frame_subsampling_factor,
+                                                     int32        max_mem,
                                                      std::string &word_syms_filename, 
                                                      std::string &model_in_filename,
                                                      std::string &fst_in_str,
@@ -325,6 +326,7 @@ namespace kaldi {
         lattice_faster_decoder_config.min_active   = min_active;
         lattice_faster_decoder_config.beam         = beam;
         lattice_faster_decoder_config.lattice_beam = lattice_beam;
+        lattice_faster_decoder_config.det_opts.max_mem = max_mem;
         decodable_opts.acoustic_scale              = acoustic_scale;
         decodable_opts.frame_subsampling_factor    = frame_subsampling_factor;
 
