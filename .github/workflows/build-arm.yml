@@ -1,0 +1,82 @@
+name: Build py-kaldi-asr on armv6l, armv7l and aarch64
+on:
+  push:
+jobs:
+  build_wheel_egg:
+    name: "Build wheel & egg"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [armv6l_raspbian, armv6l_raspios, armv7l_raspios, aarch64_raspios]
+        include:
+        - target: armv6l_raspbian
+          arch: armv6l
+          cpu: arm1176
+          python_version_wheel: cp37-cp37m
+          python_version_egg: py3.7
+          base_image: raspbian_lite:latest
+          cpu_info: cpuinfo/raspberrypi_zero_w
+        - target: armv6l_raspios
+          arch: armv6l
+          cpu: arm1176
+          python_version_wheel: cp39-cp39
+          python_version_egg: py3.9
+          base_image: raspios_lite:latest
+          cpu_info: cpuinfo/raspberrypi_zero_w
+        - target: armv7l_raspios
+          arch: armv7l
+          cpu: cortex-a7
+          python_version_wheel: cp39-cp39
+          python_version_egg: py3.9
+          base_image: raspios_lite:latest
+          cpu_info: cpuinfo/raspberrypi_3b
+        - target: aarch64_raspios
+          arch: aarch64
+          cpu: cortex-a53
+          python_version_wheel: cp39-cp39
+          python_version_egg: py3.9
+          base_image: raspios_lite_arm64:latest
+          cpu_info: cpuinfo/raspberrypi_zero2_w_arm64
+    steps:
+    - uses: actions/checkout@v2
+    - name: Download and extract kaldi
+      shell: bash
+      env:
+        MACHINE: ${{ matrix.arch }}
+      run: |
+        KALDI_RELEASE=e4940d045
+        KALDI_ARCHIVE_NAME="kaldi-${KALDI_RELEASE}-${MACHINE}.tar.xz"
+        KALDI_ARCHIVE_URL="https://github.com/pguyot/kaldi/releases/download/${KALDI_RELEASE}/${KALDI_ARCHIVE_NAME}"
+        wget -q ${KALDI_ARCHIVE_URL}
+        mkdir kaldi
+        tar xJf ${KALDI_ARCHIVE_NAME} -C kaldi
+        rm ${KALDI_ARCHIVE_NAME}
+    - name: Compile with arm-runner
+      uses: pguyot/arm-runner-action@main
+      with:
+        base_image: ${{ matrix.base_image }}
+        cpu: ${{ matrix.cpu }}
+        cpu_info: ${{ matrix.cpu_info }}
+        image_additional_mb: 2048
+        bind_mount_repository: true
+        optimize_image: false
+        copy_repository_path:
+            /home/pi/py-kaldi-asr
+        commands: |
+            apt-get update -y --allow-releaseinfo-change
+            apt-get install --no-install-recommends -y python3 python3-setuptools python3-pip python3-dev libatlas-base-dev
+            python3 -m pip install -U pip setuptools numpy Cython wheel
+            cp -a kaldi/opt /
+            cp -a kaldi/usr/lib/pkgconfig/kaldi-asr.pc /usr/lib/pkgconfig/kaldi-asr.pc
+            cp -a kaldi/etc/ld.so.conf.d/kaldi.conf /etc/ld.so.conf.d/kaldi.conf
+            python3 setup.py bdist_egg bdist_wheel
+    - name: Upload Wheel
+      uses: actions/upload-artifact@v2
+      with:
+        name: py_kaldi_asr-0.5.3-${{ matrix.python_version_wheel }}-linux_${{ matrix.arch }}.whl
+        path: dist/py_kaldi_asr-0.5.3-${{ matrix.python_version_wheel }}-linux_${{ matrix.arch }}.whl
+    - name: Upload Egg
+      uses: actions/upload-artifact@v2
+      with:
+        name: py_kaldi_asr-0.5.3-${{ matrix.python_version_egg }}-linux-${{ matrix.arch }}.egg
+        path: dist/py_kaldi_asr-0.5.3-${{ matrix.python_version_egg }}-linux-${{ matrix.arch }}.egg
