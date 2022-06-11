@@ -82,7 +82,7 @@ jobs:
         tar xJf ${KALDI_ARCHIVE_NAME} -C kaldi
         rm ${KALDI_ARCHIVE_NAME}
     - name: Compile with arm-runner
-      uses: pguyot/arm-runner-action@main
+      uses: pguyot/arm-runner-action@v2
       with:
         base_image: ${{ matrix.base_image }}
         cpu: ${{ matrix.cpu }}
@@ -199,7 +199,7 @@ jobs:
         tar xJf kaldi-generic-en-tdnn_f-r20190609.tar.xz -C data/models
         mv data/models/kaldi-generic-en-tdnn_f-r20190609 data/models/kaldi-generic-en-tdnn_sp-latest
     - name: Test with arm-runner
-      uses: pguyot/arm-runner-action@main
+      uses: pguyot/arm-runner-action@v2
       with:
         base_image: ${{ matrix.base_image }}
         cpu: ${{ matrix.cpu }}

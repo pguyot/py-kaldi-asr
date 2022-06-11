@@ -1,49 +1,51 @@
 name: Build py-kaldi-asr on macOS and Ubuntu
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches:
+      - master
+    tags:
+  pull_request:
 jobs:
   build_wheel_egg:
     name: "Build wheel & egg"
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         target: [ubuntu_39, macos_39]
         include:
         - target: ubuntu_39
           os: ubuntu-latest
+          arch: linux_x86_64
+          python_version: 3.9
+          kaldi_release_os: linux_ubuntu20.04-x86_64
           python_version_wheel: cp39-cp39m
           python_version_egg: py3.9
         - target: macos_39
-          os: macos-latest
+          os: macos-11
+          arch: darwin_x86_64
+          python_version: 3.9
+          kaldi_release_os: darwin_11.6.4-x86_64
           python_version_wheel: cp39-cp39m
           python_version_egg: py3.9
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python_version }}
     - name: Determine version from setup.py
       shell: bash
       id: version
       run: |
         VERSION=`grep version setup.py | tr "'" " " | awk '{ print $2 }'`
         echo ::set-output name=VERSION::${VERSION}
-    - name: Determine kaldi release name on macos
-      if: startsWith(matrix.os, 'macos')
-      shell: bash
-      run: |
-        VERSION=`sw_vers | grep ProductVersion | awk '{ print $2 }'`
-        echo "$VERSION-`uname -m`" > release_name
-    - name: Determine kaldi release name on ubuntu
-      if: startsWith(matrix.os, 'ubuntu')
-      shell: bash
-      run: |
-        . /etc/os-release && echo "$ID$VERSION_ID-`uname -m`" > release_name
     - name: Download and extract kaldi
       shell: bash
       run: |
-        release_name=`cat release_name`
-        os_name=`uname | tr A-Z a-z`
         KALDI_RELEASE=e4940d045
-        KALDI_ARCHIVE_NAME="kaldi-${KALDI_RELEASE}-${os_name}_${release_name}.tar.xz"
+        KALDI_ARCHIVE_NAME="kaldi-${KALDI_RELEASE}-${{ matrix.kaldi_release_os }}.tar.xz"
         KALDI_ARCHIVE_URL="https://github.com/pguyot/kaldi/releases/download/${KALDI_RELEASE}/${KALDI_ARCHIVE_NAME}"
-        wget -q ${KALDI_ARCHIVE_URL}
+        wget ${KALDI_ARCHIVE_URL}
         sudo tar xJf ${KALDI_ARCHIVE_NAME} -C /
         rm ${KALDI_ARCHIVE_NAME}
     - name: Install requirements on ubuntu
@@ -61,63 +63,57 @@ jobs:
     - name: Compile
       shell: bash
       run: |
-        find /opt/kaldi
         python3 setup.py bdist_egg bdist_wheel
     - name: Upload Wheel
       uses: actions/upload-artifact@v2
       with:
-        name: py_kaldi_asr-${{ steps.version.outputs.VERSION }}-${{ matrix.python_version_wheel }}-linux_${{ matrix.arch }}.whl
-        path: dist/py_kaldi_asr-${{ steps.version.outputs.VERSION }}-${{ matrix.python_version_wheel }}-linux_${{ matrix.arch }}.whl
+        name: py_kaldi_asr-${{ steps.version.outputs.VERSION }}-${{ matrix.python_version_wheel }}-${{ matrix.arch }}.whl
+        path: dist/py_kaldi_asr-${{ steps.version.outputs.VERSION }}-${{ matrix.python_version_wheel }}-${{ matrix.arch }}.whl
     - name: Upload Egg
       uses: actions/upload-artifact@v2
       with:
-        name: py_kaldi_asr-${{ steps.version.outputs.VERSION }}-${{ matrix.python_version_egg }}-linux-${{ matrix.arch }}.egg
-        path: dist/py_kaldi_asr-${{ steps.version.outputs.VERSION }}-${{ matrix.python_version_egg }}-linux-${{ matrix.arch }}.egg
+        name: py_kaldi_asr-${{ steps.version.outputs.VERSION }}-${{ matrix.python_version_egg }}-${{ matrix.arch }}.egg
+        path: dist/py_kaldi_asr-${{ steps.version.outputs.VERSION }}-${{ matrix.python_version_egg }}-${{ matrix.arch }}.egg
 
   test_wheel:
     name: "Test wheel"
     needs: [build_wheel_egg]
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         target: [ubuntu_39, macos_39]
         include:
         - target: ubuntu_39
           os: ubuntu-latest
+          arch: linux_x86_64
+          python_version: 3.9
+          kaldi_release_os: linux_ubuntu20.04-x86_64
           python_version_wheel: cp39-cp39m
           python_version_egg: py3.9
         - target: macos_39
-          os: macos-latest
+          os: macos-11
+          arch: darwin_x86_64
+          python_version: 3.9
+          kaldi_release_os: darwin_11.6.4-x86_64
           python_version_wheel: cp39-cp39m
           python_version_egg: py3.9
     steps:
     - uses: actions/checkout@v2
+    - uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python_version }}
     - name: Determine version from setup.py
       shell: bash
       id: version
       run: |
         VERSION=`grep version setup.py | tr "'" " " | awk '{ print $2 }'`
         echo ::set-output name=VERSION::${VERSION}
-    - name: Determine kaldi release name on macos
-      if: startsWith(matrix.os, 'macos')
-      shell: bash
-      run: |
-        cd /opt/kaldi
-        VERSION=`sw_vers | grep ProductVersion | awk '{ print $2 }'`
-        echo "$VERSION-`uname -m`" > release_name
-    - name: Determine kaldi release name on ubuntu
-      if: startsWith(matrix.os, 'ubuntu')
-      shell: bash
-      run: |
-        cd /opt/kaldi
-        . /etc/os-release && echo "$ID$VERSION_ID-`uname -m`" > release_name
     - name: Download and extract kaldi
       shell: bash
       run: |
-        release_name=`cat release_name`
-        os_name=`uname | tr A-Z a-z`
         KALDI_RELEASE=e4940d045
-        KALDI_ARCHIVE_NAME="kaldi-${KALDI_RELEASE}-${os_name}_${release_name}.tar.xz"
+        KALDI_ARCHIVE_NAME="kaldi-${KALDI_RELEASE}-${{ matrix.kaldi_release_os }}.tar.xz"
         KALDI_ARCHIVE_URL="https://github.com/pguyot/kaldi/releases/download/${KALDI_RELEASE}/${KALDI_ARCHIVE_NAME}"
         wget -q ${KALDI_ARCHIVE_URL}
         sudo tar xJf ${KALDI_ARCHIVE_NAME} -C /
