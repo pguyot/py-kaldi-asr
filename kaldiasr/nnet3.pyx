@@ -1,5 +1,4 @@
 # distutils: language = c++
-# distutils: sources = nnet3.cpp
 
 #
 # Copyright 2016, 2017, 2018 G. Bartsch
@@ -22,31 +21,17 @@ import cython
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 import numpy as np
-cimport numpy as cnp
 import struct
 import wave
 import os
 from tempfile import NamedTemporaryFile
-from cpython.version cimport PY_MAJOR_VERSION
 
-cdef unicode _text(s):
-    if type(s) is unicode:
-        # Fast path for most common case(s).
-        return <unicode>s
-
-    elif PY_MAJOR_VERSION < 3 and isinstance(s, bytes):
-        # Only accept byte strings as text input in Python 2.x, not in Py3.
+cdef str _text(s):
+    if isinstance(s, str):
+        return str(s)
+    if isinstance(s, bytes):
         return (<bytes>s).decode('utf8')
-
-    elif isinstance(s, unicode):
-        # We know from the fast path above that 's' can only be a subtype here.
-        # An evil cast to <unicode> might still work in some(!) cases,
-        # depending on what the further processing does.  To be safe,
-        # we can always create a copy instead.
-        return unicode(s)
-
-    else:
-        raise TypeError("Could not convert to unicode.")
+    raise TypeError("Could not convert to str.")
 
 cdef extern from "nnet3_wrappers.h" namespace "kaldi":
 
@@ -66,7 +51,7 @@ cdef extern from "nnet3_wrappers.h" namespace "kaldi":
 cdef class KaldiNNet3OnlineModel:
 
     cdef NNet3OnlineModelWrapper* model_wrapper
-    cdef unicode                  modeldir, model
+    cdef str                  modeldir, model
     cdef object                   ie_conf_f
 
     def __cinit__(self, object modeldir, 
@@ -91,12 +76,12 @@ cdef class KaldiNNet3OnlineModel:
         else:
             self.model        = _text(model)
 
-        cdef unicode mfcc_config           = u'%s/conf/mfcc_hires.conf'                  % self.modeldir
-        cdef unicode word_symbol_table     = u'%s/%s/graph/words.txt'                    % (self.modeldir, self.model)
-        cdef unicode model_in_filename     = u'%s/%s/final.mdl'                          % (self.modeldir, self.model)
-        cdef unicode splice_conf_filename  = u'%s/ivectors_test_hires/conf/splice.conf'  % self.modeldir
-        cdef unicode fst_in_str            = u'%s/%s/graph/HCLG.fst'                     % (self.modeldir, self.model)
-        cdef unicode align_lex_filename    = u'%s/%s/graph/phones/align_lexicon.int'     % (self.modeldir, self.model)
+        cdef str mfcc_config           = u'%s/conf/mfcc_hires.conf'                  % self.modeldir
+        cdef str word_symbol_table     = u'%s/%s/graph/words.txt'                    % (self.modeldir, self.model)
+        cdef str model_in_filename     = u'%s/%s/final.mdl'                          % (self.modeldir, self.model)
+        cdef str splice_conf_filename  = u'%s/ivectors_test_hires/conf/splice.conf'  % self.modeldir
+        cdef str fst_in_str            = u'%s/%s/graph/HCLG.fst'                     % (self.modeldir, self.model)
+        cdef str align_lex_filename    = u'%s/%s/graph/phones/align_lexicon.int'     % (self.modeldir, self.model)
 
         #
         # make sure all model files required exist
@@ -168,8 +153,15 @@ cdef class KaldiNNet3OnlineDecoder:
     def __dealloc__(self):
         del self.decoder_wrapper
 
-    def decode(self, samp_freq, cnp.ndarray[float, ndim=1, mode="c"] samples not None, finalize):
-        return self.decoder_wrapper.decode(samp_freq, samples.shape[0], <float *> samples.data, finalize)
+    def decode(self, samp_freq, const float[::1] samples not None, finalize):
+        # Typed memoryview: accepts any C-contiguous float32 buffer
+        # (numpy array, array.array('f'), ...) without compiling against
+        # the NumPy C API, so the wheel works with NumPy 1.x and 2.x.
+        cdef Py_ssize_t num_frames = samples.shape[0]
+        cdef float *frames = NULL
+        if num_frames > 0:
+            frames = <float *> &samples[0]
+        return self.decoder_wrapper.decode(samp_freq, num_frames, frames, finalize)
 
     def get_decoded_string(self):
         cdef string decoded_string

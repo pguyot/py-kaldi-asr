@@ -1,5 +1,4 @@
 # distutils: language = c++
-# distutils: sources = gmm.cpp
 
 #
 # Author: David Zurow, adapted from G. Bartsch
@@ -22,33 +21,19 @@ import cython
 from libcpp.string cimport string
 from libcpp.vector cimport vector
 import numpy as np
-cimport numpy as cnp
 import struct
 import wave
 import os, os.path
 import re
 from tempfile import NamedTemporaryFile
 import subprocess
-from cpython.version cimport PY_MAJOR_VERSION
 
-cdef unicode _text(s):
-    if type(s) is unicode:
-        # Fast path for most common case(s).
-        return <unicode>s
-
-    elif PY_MAJOR_VERSION < 3 and isinstance(s, bytes):
-        # Only accept byte strings as text input in Python 2.x, not in Py3.
+cdef str _text(s):
+    if isinstance(s, str):
+        return str(s)
+    if isinstance(s, bytes):
         return (<bytes>s).decode('utf8')
-
-    elif isinstance(s, unicode):
-        # We know from the fast path above that 's' can only be a subtype here.
-        # An evil cast to <unicode> might still work in some(!) cases,
-        # depending on what the further processing does.  To be safe,
-        # we can always create a copy instead.
-        return unicode(s)
-
-    else:
-        raise TypeError("Could not convert to unicode.")
+    raise TypeError("Could not convert to str.")
 
 cdef extern from "gmm_wrappers.h" namespace "kaldi":
 
@@ -68,7 +53,7 @@ cdef extern from "gmm_wrappers.h" namespace "kaldi":
 cdef class KaldiGmmOnlineModel:
 
     cdef GmmOnlineModelWrapper* model_wrapper
-    cdef unicode                model_dir, graph_dir
+    cdef str                model_dir, graph_dir
     cdef object                 conf_file
 
     def __cinit__(self, object model_dir, 
@@ -81,10 +66,10 @@ cdef class KaldiGmmOnlineModel:
         self.model_dir = _text(model_dir)
         self.graph_dir = _text(graph_dir)
 
-        cdef unicode config                = u'%s/conf/online_decoding.conf'             % self.model_dir
-        cdef unicode word_symbol_table     = u'%s/graph/words.txt'                       % self.graph_dir
-        cdef unicode fst_in_str            = u'%s/graph/HCLG.fst'                        % self.graph_dir
-        cdef unicode align_lex_filename    = u'%s/graph/phones/align_lexicon.int'        % self.graph_dir
+        cdef str config                = u'%s/conf/online_decoding.conf'             % self.model_dir
+        cdef str word_symbol_table     = u'%s/graph/words.txt'                       % self.graph_dir
+        cdef str fst_in_str            = u'%s/graph/HCLG.fst'                        % self.graph_dir
+        cdef str align_lex_filename    = u'%s/graph/phones/align_lexicon.int'        % self.graph_dir
 
         #
         # make sure all model files required exist
@@ -146,8 +131,15 @@ cdef class KaldiGmmOnlineDecoder:
     def __dealloc__(self):
         del self.decoder_wrapper
 
-    def decode(self, samp_freq, cnp.ndarray[float, ndim=1, mode="c"] samples not None, finalize):
-        return self.decoder_wrapper.decode(samp_freq, samples.shape[0], <float *> samples.data, finalize)
+    def decode(self, samp_freq, const float[::1] samples not None, finalize):
+        # Typed memoryview: accepts any C-contiguous float32 buffer
+        # (numpy array, array.array('f'), ...) without compiling against
+        # the NumPy C API, so the wheel works with NumPy 1.x and 2.x.
+        cdef Py_ssize_t num_frames = samples.shape[0]
+        cdef float *frames = NULL
+        if num_frames > 0:
+            frames = <float *> &samples[0]
+        return self.decoder_wrapper.decode(samp_freq, num_frames, frames, finalize)
 
     def get_decoded_string(self):
         cdef string decoded_string

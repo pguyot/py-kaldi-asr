@@ -1,0 +1,100 @@
+name: Build py-kaldi-asr wheels for Bookworm (armv6l, armv7l, aarch64)
+on:
+  push:
+    branches: [master, modernize-py311]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  KALDI_RELEASE: 0ff452b
+  # pynab English model, used for the smoke test
+  MODEL_URL: https://github.com/nabaztag2018/pynab/raw/master/asr/kaldi-nabaztag-en-adapt-r20191222.tar.xz
+
+jobs:
+  wheel:
+    name: "Wheel ${{ matrix.target }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: armv6l-bookworm
+            base_image: dietpi:rpi_armv6_bookworm
+            cpu: arm1176
+            cpu_info: cpuinfo/raspberrypi_zero_w
+            kaldi_platform: raspbian12-armv6l
+          - target: armv7l-bookworm
+            base_image: dietpi:rpi_armv7_bookworm
+            cpu: cortex-a7
+            cpu_info: cpuinfo/raspberrypi_3b
+            kaldi_platform: raspbian12-armv7l
+          - target: aarch64-bookworm
+            base_image: dietpi:rpi_armv8_bookworm
+            cpu: cortex-a53
+            cpu_info: cpuinfo/raspberrypi_zero2_w_arm64
+            kaldi_platform: debian12-aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Kaldi and model
+        run: |
+          mkdir -p kaldi model
+          wget -q -O - "https://github.com/pguyot/kaldi/releases/download/${KALDI_RELEASE}/kaldi-${KALDI_RELEASE}-linux_${{ matrix.kaldi_platform }}.tar.xz" | tar xJ -C kaldi
+          wget -q -O - "${MODEL_URL}" | tar xJ -C model
+
+      - name: Build and smoke-test in emulated Raspberry Pi
+        uses: pguyot/arm-runner-action@45f370abd7eed1b20397277e5ec0cb0a31adb026 # main 2026-09-26: Ubuntu 26.04 qemu fix, not in v2.6.5
+        with:
+          base_image: ${{ matrix.base_image }}
+          cpu: ${{ matrix.cpu }}
+          cpu_info: ${{ matrix.cpu_info }}
+          image_additional_mb: 3072
+          bind_mount_repository: true
+          shell: /bin/bash
+          commands: |
+            set -eux
+            REPO="$(pwd)"
+            apt-get update -y
+            apt-get install --no-install-recommends -y \
+              python3 python3-dev python3-venv python3-numpy pkg-config g++ make
+            cp -a kaldi/opt /
+            cp -a kaldi/usr/lib/pkgconfig/kaldi-asr.pc /usr/lib/pkgconfig/kaldi-asr.pc
+            cp -a kaldi/etc/ld.so.conf.d/kaldi.conf /etc/ld.so.conf.d/kaldi.conf
+            ldconfig
+
+            # Build in an isolated env (Cython 3 + setuptools from PyPI/piwheels)
+            python3 -m venv /tmp/build
+            /tmp/build/bin/pip install --upgrade pip build
+            /tmp/build/bin/python -m build --wheel --outdir dist .
+
+            # Test with the distro numpy, like a fresh rabbit would
+            python3 -m venv --system-site-packages /tmp/test
+            /tmp/test/bin/pip install --no-deps dist/*.whl
+            # Run from /tmp so the source tree's kaldiasr/ does not shadow the wheel
+            (cd /tmp && /tmp/test/bin/python "$REPO/tests/smoke_test.py" \
+              "$REPO/model/kaldi-nabaztag-en-adapt-r20191222" \
+              "$REPO/data/dw961.wav" "$REPO/data/single.wav")
+            python3 -c "import sysconfig; print(sysconfig.get_platform())"
+            ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist/*.whl
+
+  release:
+    name: "Attach wheels to release"
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: wheel
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.whl

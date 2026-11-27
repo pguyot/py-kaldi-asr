@@ -1,170 +1,142 @@
-from __future__ import print_function
-from setuptools import setup, Extension
-import numpy
-import subprocess
-import sys
+"""Build script for py-kaldi-asr.
+
+Compiler and linker flags come from the ``kaldi-asr`` pkg-config file
+installed with Kaldi (e.g. pguyot/kaldi release tarballs), so
+``pkg-config --cflags --libs kaldi-asr`` must work.
+
+BLAS flavour (required by Kaldi's matrix/kaldi-blas.h):
+  * OpenBLAS bundled with Kaldi (``<kaldi_root>/tools/OpenBLAS/install``),
+    used by pguyot/kaldi >= 0ff452b;
+  * otherwise ATLAS (``pkg-config atlas`` / ``blas-atlas``, or libatlas3-base
+    in the usual library directories), used by older Kaldi builds.
+Set ``KALDI_BLAS=openblas`` or ``KALDI_BLAS=atlas`` to force one.
+"""
+
 import os
+import subprocess
 
-cmdclass = {}
-ext_modules = []
+from Cython.Build import cythonize
+from setuptools import Extension, setup
 
-def getstatusoutput(command):
-    process = subprocess.Popen(command, stdout=subprocess.PIPE)
-    out, _ = process.communicate()
-    return (process.returncode, out)
+FLAG_MAP = {"-I": "include_dirs", "-L": "library_dirs", "-l": "libraries"}
+
+
+def pkg_config(*args):
+    """Return pkg-config output as a list of tokens, or None on failure."""
+    try:
+        out = subprocess.run(
+            ["pkg-config", *args], check=True, capture_output=True, text=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return out.split()
+
+
+def add_tokens(kw, tokens):
+    for token in tokens:
+        key = FLAG_MAP.get(token[:2])
+        if key is None:
+            kw.setdefault("extra_link_args", []).append(token)
+        else:
+            kw.setdefault(key, []).append(token[2:])
+
+
+def find_openblas(kaldi_root):
+    install = os.path.join(kaldi_root, "tools", "OpenBLAS", "install")
+    if os.path.isfile(os.path.join(install, "include", "cblas.h")):
+        return install
+    return None
+
+
+def find_atlas(kw):
+    for name in ("blas-atlas", "atlas"):
+        tokens = pkg_config("--libs", "--cflags", name)
+        if tokens is not None:
+            add_tokens(kw, tokens)
+            return True
+    for libdir in (
+        "/usr/lib",
+        "/usr/lib64",
+        "/usr/lib/x86_64-linux-gnu",
+        "/usr/lib/aarch64-linux-gnu",
+        "/usr/lib/arm-linux-gnueabihf",
+    ):
+        if os.path.isfile(os.path.join(libdir, "libatlas.so.3")):
+            kw.setdefault("library_dirs", []).append(libdir)
+            kw.setdefault("libraries", []).extend(
+                ["atlas", "cblas", "f77blas", "lapack_atlas"]
+            )
+            for incdir in (
+                "/usr/include/atlas",
+                "/usr/include/x86_64-linux-gnu/atlas",
+            ):
+                if os.path.isdir(incdir):
+                    kw.setdefault("include_dirs", []).append(incdir)
+            return True
+    return False
 
 
 def find_dependencies():
     kw = {}
 
-    flag_map = {'-I': 'include_dirs', '-L': 'library_dirs', '-l': 'libraries'}
+    tokens = pkg_config("--libs", "--cflags", "kaldi-asr")
+    if tokens is None:
+        raise RuntimeError("*** failed to find pkg-config file for kaldi-asr")
+    add_tokens(kw, tokens)
 
-    #
-    # find atlas library (try pkgconfig, if that fails look at usual places)
-    #
+    kaldi_root = (pkg_config("--variable=kaldi_root", "kaldi-asr") or ["/opt/kaldi"])[0]
+    blas = os.environ.get("KALDI_BLAS", "").lower()
+    openblas = find_openblas(kaldi_root)
 
-    print("looking for atlas library, trying pkg-config first...")
-
-    # Try pky-config values for atlas
-    status, output = getstatusoutput(
-        ["pkg-config", "--libs", "--cflags", "blas-atlas"])
-
-    # Try pkg-config values for atlas
-    if status != 0:
-        status, output = getstatusoutput(
-            ["pkg-config", "--libs", "--cflags", "atlas"])
-
-    if status != 0:
-        status, output = getstatusoutput(["pkg-config", "--libs", "--cflags", "blas-atlas"])
-
-    if status != 0:
-        print ("looking for atlas library, trying hard-coded paths...")
-
-        found = False
-
-        for libdir in ['/usr/lib', '/usr/lib64', '/usr/lib/x86_64-linux-gnu',
-                       '/usr/lib/i386-linux-gnu']:
-            if os.path.isfile('%s/libatlas.so.3' % libdir):
-                found = True
-                break
-        if not found:
-            raise Exception('Failed to find libatlas.so.3 on your system.')
-
-        kw.setdefault('libraries', []).append('%s/atlas.so.3' % libdir)
-        kw.setdefault('libraries', []).append('%s/cblas.so.3' % libdir)
-        kw.setdefault('libraries', []).append('%s/f77blas.so.3' % libdir)
-        kw.setdefault('libraries', []).append('%s/lapack_atlas.so.3' % libdir)
-
-        include_path = None
-        include_found = False
-        for include_dir in ['/usr/include/atlas',
-                            '/usr/include/x86_64-linux-gnu/atlas']:
-            if os.path.isdir(include_dir):
-                include_found = True
-                include_path = include_dir
-
-        if not include_found:
-            raise Exception('Failed to find atlas includes your system.')
-
-        kw.setdefault('include_dirs', []).append(include_path)
-
-        print("looking for atlas library, found it.")
+    if blas == "openblas" or (blas == "" and openblas):
+        if openblas is None:
+            raise RuntimeError(
+                "KALDI_BLAS=openblas but no OpenBLAS found under %s" % kaldi_root
+            )
+        print("py-kaldi-asr: using OpenBLAS from %s" % openblas)
+        kw.setdefault("include_dirs", []).append(os.path.join(openblas, "include"))
+        kw.setdefault("define_macros", []).append(("HAVE_OPENBLAS", None))
+    elif blas in ("", "atlas"):
+        if not find_atlas(kw):
+            raise RuntimeError(
+                "No BLAS found: install Kaldi with its bundled OpenBLAS, "
+                "or ATLAS (libatlas-base-dev)."
+            )
+        print("py-kaldi-asr: using ATLAS")
+        kw.setdefault("define_macros", []).append(("HAVE_ATLAS", None))
     else:
-        print("looking for atlas library, pkg-config found it")
-        for token in output.split():
-            token = token.decode('utf8')
-            kw.setdefault(flag_map.get(token[:2]), []).append(token[2:])
-
-    #
-    # pkgconfig: kaldi-asr
-    #
-
-    status, output = getstatusoutput(
-        ["pkg-config", "--libs", "--cflags", "kaldi-asr"])
-
-    if status != 0:
-        raise Exception("*** failed to find pkgconfig for kaldi-asr")
-
-    for token in output.split():
-        token = token.decode('utf8')
-
-        prefix = token[:2]
-        arg = token[2:]
-
-        # print(repr(token))
-        # print(repr(prefix))
-
-        kw.setdefault(flag_map.get(prefix), []).append(arg)
-
-    # print (repr(kw))
+        raise RuntimeError("Unsupported KALDI_BLAS=%s" % blas)
 
     return kw
 
 
-# CFLAGS = -Wall -pthread -std=c++11 -DKALDI_DOUBLEPRECISION=0 -Wno-sign-compare \
-#          -Wno-unused-local-typedefs -Winit-self -DHAVE_EXECINFO_H=1 -DHAVE_CXXABI_H -DHAVE_ATLAS \
-#          `pkg-config --cflags kaldi-asr` -g
-
-ext_modules += [
-    Extension("kaldiasr.nnet3",
-              sources=["kaldiasr/nnet3.pyx", "kaldiasr/nnet3_wrappers.cpp"],
-              language="c++",
-              extra_compile_args=['-Wall', '-pthread', '-std=c++11',
-                                  '-DKALDI_DOUBLEPRECISION=0',
-                                  '-Wno-sign-compare',
-                                  '-Wno-unused-local-typedefs', '-Winit-self',
-                                  '-DHAVE_EXECINFO_H=1', '-DHAVE_CXXABI_H',
-                                  '-DHAVE_ATLAS', '-g'],
-              **find_dependencies()),
-    Extension("kaldiasr.gmm",
-              sources=["kaldiasr/gmm.pyx", "kaldiasr/gmm_wrappers.cpp"],
-              language="c++",
-              extra_compile_args=['-Wall', '-pthread', '-std=c++11',
-                                  '-DKALDI_DOUBLEPRECISION=0',
-                                  '-Wno-sign-compare',
-                                  '-Wno-unused-local-typedefs', '-Winit-self',
-                                  '-DHAVE_EXECINFO_H=1', '-DHAVE_CXXABI_H',
-                                  '-DHAVE_ATLAS', '-g'],
-              **find_dependencies()),
+EXTRA_COMPILE_ARGS = [
+    "-Wall",
+    "-pthread",
+    "-std=c++17",
+    "-DKALDI_DOUBLEPRECISION=0",
+    "-Wno-sign-compare",
+    "-Wno-unused-local-typedefs",
+    "-Winit-self",
+    "-DHAVE_EXECINFO_H=1",
+    "-DHAVE_CXXABI_H",
+    "-g0",
+    "-O2",
 ]
-try:
-    from Cython.Distutils import build_ext
-    cmdclass.update({ 'build_ext': build_ext })
-    for e in ext_modules:
-        e.cython_directives = {'language_level': "3"}
-except ImportError:
-	pass # *** cython is needed to build this extension.
+
+deps = find_dependencies()
+
+ext_modules = [
+    Extension(
+        "kaldiasr.%s" % name,
+        sources=["kaldiasr/%s.pyx" % name, "kaldiasr/%s_wrappers.cpp" % name],
+        language="c++",
+        extra_compile_args=EXTRA_COMPILE_ARGS,
+        **deps,
+    )
+    for name in ("nnet3", "gmm")
+]
 
 setup(
-    name='py-kaldi-asr',
-    version='0.5.3',
-    description='Simple Python/Cython interface to kaldi-asr nnet3/chain and gmm decoders',
-    long_description=open('README.md').read(),
-    author='Guenter Bartsch',
-    author_email='guenter@zamia.org',
-    maintainer='Guenter Bartsch',
-    maintainer_email='guenter@zamia.org',
-    url='https://github.com/gooofy/py-kaldi-asr',
-    packages=['kaldiasr'],
-    cmdclass=cmdclass,
-    ext_modules=ext_modules,
-    include_dirs=[numpy.get_include()],
-    classifiers=[
-        'Operating System :: POSIX :: Linux',
-        'License :: OSI Approved :: Apache Software License',
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Cython',
-        'Programming Language :: C++',
-        'Intended Audience :: Developers',
-        'Topic :: Software Development :: Libraries :: Python Modules',
-        'Topic :: Multimedia :: Sound/Audio :: Speech'
-    ],
-    license='Apache',
-    keywords='kaldi asr',
-    include_package_data=True,
-    install_requires=['numpy', 'cython', ],
+    ext_modules=cythonize(ext_modules, compiler_directives={"language_level": "3"}),
 )
-

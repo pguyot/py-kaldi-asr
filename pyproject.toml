@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61", "wheel", "Cython>=3.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-kaldi-asr"
+version = "0.6.0"
+description = "Simple Python/Cython interface to kaldi-asr nnet3/chain and gmm decoders"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Guenter Bartsch", email = "guenter@zamia.org" }]
+requires-python = ">=3.7"
+# numpy is only used by the decode_wav_file() helpers; the extensions use
+# typed memoryviews and do not link against the NumPy C API.
+dependencies = ["numpy"]
+keywords = ["kaldi", "asr"]
+classifiers = [
+    "Operating System :: POSIX :: Linux",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Cython",
+    "Programming Language :: C++",
+    "Intended Audience :: Developers",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+
+[project.urls]
+Homepage = "https://github.com/pguyot/py-kaldi-asr"
+
+[tool.setuptools]
+packages = ["kaldiasr"]
+include-package-data = false
